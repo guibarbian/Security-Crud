@@ -10,5 +10,4 @@ public class RequestPersonDto {
     private String name;
     private String email;
     private String password;
-    private PersonRole role;
 }
