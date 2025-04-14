@@ -1,4 +1,6 @@
 package com.db.taskcrud.dto;
 
-public class RegisterDTO {
+import com.db.taskcrud.enums.PersonRole;
+
+public record RegisterDTO(String name, String email, String password) {
 }
