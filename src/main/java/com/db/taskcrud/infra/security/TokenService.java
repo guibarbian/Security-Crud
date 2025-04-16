@@ -1,79 +1,68 @@
 package com.db.taskcrud.infra.security;
+
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTVerifier;
+import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.exceptions.JWTCreationException;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
+import com.db.taskcrud.exception.BadRequestException;
 import com.db.taskcrud.model.Person;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
-import java.security.Key;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.function.Function;
 
 @Service
 public class TokenService {
 
-    @Value("${api.security.token.secret}")
+    @Value("${jwt.secret}")
     public String secret;
 
-    private Instant getExpirationDate(){
-        return LocalDateTime.now().plusHours(2).toInstant(ZoneOffset.of("-3:00"));
+    public String generateToken(Person person){
+        try {
+            Algorithm algorithm = Algorithm.HMAC256(secret);
+            return JWT.create()
+                    .withIssuer("taskcrud")
+                    .withSubject(person.getEmail())
+                    .withExpiresAt(getExpirationTime(3600))
+                    .sign(algorithm);
+        } catch (JWTCreationException exception){
+            throw new BadRequestException("Error creating JWT Token");
+        }
     }
 
-    public String extractUsername(String jwtToken){
-        return extractClaims(jwtToken, Claims::getSubject);
+    public String generateRefreshToken(Person person) {
+        try{
+            Algorithm algorithm = Algorithm.HMAC256(secret);
+            return JWT.create()
+                    .withIssuer("auth0")
+                    .withSubject(person.getId().toString())
+                    .withExpiresAt(getExpirationTime(7200))
+                    .sign(algorithm);
+        } catch (JWTVerificationException exception){
+            throw new BadRequestException("Error creating Refresh Token");
+        }
     }
 
-    public <T> T extractClaims(String jwtToken, Function<Claims, T> claimsResolver){
-        final Claims claims = extractAllClaims(jwtToken);
-        return claimsResolver.apply(claims);
+    public String verifyToken(String token){
+        DecodedJWT decodedJWT;
+        try {
+            Algorithm algorithm = Algorithm.HMAC256(secret);
+            JWTVerifier verifier = JWT.require(algorithm)
+                    .withIssuer("auth0")
+                    .build();
+
+            decodedJWT = verifier.verify(token);
+            return decodedJWT.getSubject();
+        } catch(JWTVerificationException exception){
+            throw new BadRequestException("Error verifying JWT Token");
+        }
     }
 
-    public String generateToken(UserDetails userDetails) {
-        return generateToken(new HashMap<>(), userDetails);
-    }
-
-    public String generateToken(Map<String, Object> extraClaims,UserDetails userDetails){
-        return Jwts.builder()
-                .setClaims(extraClaims)
-                .setSubject(userDetails.getUsername())
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 24))
-                .signWith(getSigninKey(), SignatureAlgorithm.HS256).compact();
-    }
-
-    public boolean isTokenValid(String jwtToken, UserDetails userDetails){
-        final String username = extractUsername(jwtToken);
-        return (username.equals(userDetails.getUsername())) && !isTokenExpired(jwtToken);
-    }
-
-    private Claims extractAllClaims(String jwtToken){
-        return Jwts
-                .parserBuilder()
-                .setSigningKey(getSigninKey())
-                .build()
-                .parseClaimsJws(jwtToken)
-                .getBody();
-    }
-
-    private Key getSigninKey(){
-        byte[] keyBytes = Decoders.BASE64.decode(secret);
-        return Keys.hmacShaKeyFor(keyBytes);
-    }
-
-    private boolean isTokenExpired(String jwtToken) {
-        return extractExpiration(jwtToken).isBefore(Instant.now());
-    }
-
-    private Instant extractExpiration(String jwtToken) {
-        return extractClaims(jwtToken, Claims::getExpiration).toInstant();
+    private Instant getExpirationTime(Integer seconds){
+        return LocalDateTime.now().plusSeconds(seconds).toInstant(ZoneOffset.of("-03:00"));
     }
 }

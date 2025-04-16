@@ -1,9 +1,13 @@
 package com.db.taskcrud.infra.security;
 
-import com.db.taskcrud.dto.AuthenticationDTO;
-import com.db.taskcrud.dto.RegisterDTO;
+import com.db.taskcrud.dto.request.AuthenticationDTO;
+import com.db.taskcrud.dto.request.RegisterDTO;
 import com.db.taskcrud.dto.response.AuthenticationResponse;
+import com.db.taskcrud.dto.request.RefreshDTO;
+import com.db.taskcrud.dto.response.RefreshResponse;
+import com.db.taskcrud.dto.response.RegistrationResponse;
 import com.db.taskcrud.enums.PersonRole;
+import com.db.taskcrud.exception.NotFoundException;
 import com.db.taskcrud.model.Person;
 import com.db.taskcrud.repository.PersonRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,32 +25,39 @@ public class AuthenticationService {
     private final TokenService tokenService;
     private final AuthenticationManager authenticationManager;
 
-    public AuthenticationResponse register(RegisterDTO dto) {
+    public RegistrationResponse register(RegisterDTO dto) {
         var person = Person.builder()
-                .name(dto.name())
-                .email(dto.email())
-                .password(passwordEncoder.encode(dto.password()))
+                .name(dto.getName())
+                .email(dto.getEmail())
+                .password(passwordEncoder.encode(dto.getPassword()))
                 .role(PersonRole.USER).build();
 
         personRepository.save(person);
 
         var jwtToken = tokenService.generateToken(person);
-        return AuthenticationResponse.builder()
+
+        return RegistrationResponse.builder()
                 .token(jwtToken).build();
     }
 
     public AuthenticationResponse login(AuthenticationDTO dto) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        dto.email(),
-                        dto.password()
-                )
-        );
+        var authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(dto.email(), dto.password()));
 
-        var person = personRepository.findByEmail(dto.email())
-                .orElseThrow();
-        var jwtToken = tokenService.generateToken(person);
-        return AuthenticationResponse.builder()
-                .token(jwtToken).build();
+        String jwtToken = tokenService.generateToken((Person) authentication.getPrincipal());
+        String refreshToken = tokenService.generateRefreshToken((Person) authentication.getPrincipal());
+        return new AuthenticationResponse(jwtToken, refreshToken);
+    }
+
+    public RefreshResponse refreshToken(RefreshDTO dto){
+        var refreshToken = dto.refreshToken();
+        Long id = Long.valueOf(tokenService.verifyToken(refreshToken));
+
+        var person = personRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Person not found"));
+
+        String jwtToken = tokenService.generateToken(person);
+        String updateToken = tokenService.generateRefreshToken(person);
+        return new RefreshResponse(jwtToken, updateToken);
     }
 }

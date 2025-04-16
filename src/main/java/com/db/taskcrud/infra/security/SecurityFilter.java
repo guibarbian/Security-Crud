@@ -1,5 +1,6 @@
 package com.db.taskcrud.infra.security;
 
+import com.db.taskcrud.exception.NotFoundException;
 import com.db.taskcrud.model.Person;
 import com.db.taskcrud.repository.PersonRepository;
 import jakarta.servlet.FilterChain;
@@ -10,10 +11,12 @@ import lombok.RequiredArgsConstructor;
 import org.apache.catalina.User;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
@@ -29,36 +32,34 @@ import java.util.Optional;
 public class SecurityFilter extends OncePerRequestFilter {
 
     private final TokenService tokenService;
-    private final UserDetailsService userDetailsService;
+    private final PersonRepository personRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-        final String authHeader = request.getHeader("Authorization");
-        final String jwtToken;
-        final String personEmail;
+        final String token = getToken(request);
 
-        if(authHeader == null || !authHeader.startsWith("Bearer ")){
-            filterChain.doFilter(request, response);
-            return;
+        if(token != null){
+            String email = tokenService.verifyToken(token);
+            Person person = personRepository.findByEmail(email)
+                    .orElseThrow(() -> new NotFoundException("Email does not belong to any user"));
+
+            Authentication auth = new UsernamePasswordAuthenticationToken(
+                    person, null, person.getAuthorities()
+            );
+
+            SecurityContextHolder.getContext().setAuthentication(auth);
         }
 
-        jwtToken = authHeader.substring(7);
-        personEmail = tokenService.extractUsername(jwtToken);
-
-        if(personEmail != null && SecurityContextHolder.getContext().getAuthentication() == null){
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(personEmail);
-            if(tokenService.isTokenValid(jwtToken, userDetails)){
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails,
-                        null,
-                        userDetails.getAuthorities()
-                );
-                authToken.setDetails(
-                        new WebAuthenticationDetailsSource().buildDetails(request)
-                );
-                SecurityContextHolder.getContext().setAuthentication(authToken);
-            }
-        }
         filterChain.doFilter(request, response);
+    }
+
+    private String getToken(HttpServletRequest request){
+        final String authHeader = request.getHeader("Authorization");
+
+        if(authHeader != null){
+            return authHeader.replace("Bearer", "");
+        }
+
+        return null;
     }
 }

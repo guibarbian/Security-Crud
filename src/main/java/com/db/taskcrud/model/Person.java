@@ -17,7 +17,7 @@ import java.util.List;
 @Builder
 @Data
 @Entity
-@Table(name = "people")
+@Table(name = "tbl_person")
 @AllArgsConstructor
 @NoArgsConstructor
 public class Person implements UserDetails {
@@ -34,23 +34,6 @@ public class Person implements UserDetails {
 
     @Enumerated(EnumType.STRING)
     private PersonRole role;
-
-    public Person(String name, String email, String password, PersonRole role){
-        this.name = name;
-        this.email = email;
-        this.password = password;
-        this.role = role;
-    }
-
-    public ResponsePersonDto toDto(){
-        return ResponsePersonDto.builder()
-                .id(this.id)
-                .name(this.name)
-                .email(this.email)
-                .password(this.password)
-                .role(this.role)
-                .build();
-    }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
